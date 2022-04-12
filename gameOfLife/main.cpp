@@ -130,9 +130,9 @@ static uint8_t *current_generation, *next_generation;
 extern "C" void
 cudaInitRandomStates(uint8_t* output, int width, int height, int min, int max);
 
-// extern "C" void
-// cudaConwayNextGeneration( uint8_t* input_state, uint8_t* output_state, uint8_t* img_rgba,
-//     int width, int height, int color_alive, int color_dead );
+extern "C" void
+cudaConwayNextGeneration( uint8_t* input_state, uint8_t* output_state, int width, int height,
+    uint8_t alive_state, uint8_t dead_state);
 
 extern "C" void
 cudaDrawConwayGeneration( uint8_t* input_state, uint32_t* img_rgba, int width, int height,
@@ -178,7 +178,12 @@ void process(int width, int height/* , int radius */)
     size_t num_bytes;
     checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&out_data, &num_bytes, cuda_pbo_dest_resource));
 
-    // cudaRandom( (uint8_t*)out_data, width, height );
+    cudaConwayNextGeneration( current_generation, next_generation, width, height, 1, 0);
+
+    uint8_t* temp = current_generation;
+    current_generation = next_generation;
+    next_generation = temp;
+
     // color format abgr
     cudaDrawConwayGeneration( current_generation, (uint32_t*)out_data, width, height, 1, 0, 0xFFFFFFFF, 0xFF000000);
     // printf("process: %d\n", num_bytes);
