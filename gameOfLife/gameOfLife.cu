@@ -130,83 +130,6 @@ inline __device__ __host__ int iDivUp( int a, int b )  		{ return (a % b != 0) ?
 
 
 
-
-
-static int _current_color = 0;
-
-__global__ void _gpuRandom(
-    uint8_t* output,
-    int width,
-    int height,
-    int color) {
-
-    const int x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if( x >= width || y >= height )
-        return;
-    
-    // if(color == 0) output[y * width * 4 + (x * 4)] = 255;
-    // else output[y * width * 4 + (x * 4)] = 0;
-
-    // if(color == 1) output[y * width * 4 + (x * 4) + 1] = 255;
-    // else output[y * width * 4 + (x * 4) + 1] = 0;
-
-    // if(color == 1) output[y * width * 4 + (x * 4) + 2] = 255;
-    // else output[y * width * 4 + (x * 4) + 2] = 0;
-
-    /* CUDA's random number library uses curandState_t to keep track of the seed value
-     we will store a random state for every thread  */
-    curandState_t state;
-
-    // /* we have to initialize the state */
-    // curand_init(0, /* the seed controls the sequence of random values that are produced */
-    //             0, /* the sequence number is only important with multiple cores */
-    //             0, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
-    //             &state);
-    curand_init(clock64(), x, 0, &state);
-
-    /* curand works like rand - except that it takes a state as a parameter */
-    output[y * width * 4 + (x * 4)] = curand(&state) % 255;
-    output[y * width * 4 + (x * 4) + 1] = curand(&state) % 255;
-    output[y * width * 4 + (x * 4) + 2] = curand(&state) % 255;
-}
-
-cudaError_t _cudaRandom(
-    uint8_t* output,
-    int width,
-    int height)
-{
-    if( !output )
-        return cudaErrorInvalidDevicePointer;
-
-    if( width == 0 || height == 0 )
-        return cudaErrorInvalidValue;
-
-
-    // launch kernel
-    const dim3 blockDim(32, 32);
-    const dim3 gridDim(iDivUp(width,blockDim.x), iDivUp(height,blockDim.y));
-    
-    _gpuRandom<<<gridDim, blockDim>>>( output, width, height, _current_color);
-
-    _current_color++;
-
-    if(_current_color > 2) _current_color = 0;
-
-    return CUDA(cudaGetLastError());
-}
-
-extern "C" void
-cudaRandom(
-    uint8_t* output,
-    int width,
-    int height)
-{
-    _cudaRandom(output, width, height);
-}
-
-
 __global__ void _gpuInitRandomStates(
     uint8_t* output,
     int width,
@@ -265,39 +188,26 @@ cudaInitRandomStates(
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 __global__ void _gpuConwayNextGeneration(
     uint8_t* input_state,
     uint8_t* output_state,
-    uint8_t* img_rgba,
     int width,
     int height,
-    int color_alive,
-    int color_dead) {
+    uint8_t alive_state,
+    uint8_t dead_state) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
     if( x >= width || y >= height )
         return;
+
+    int cell_idx = y * width + x;
     
-    uint8_t current_cell_state = input_state[y * width + x];
+    uint8_t current_cell_state = input_state[cell_idx];
 
     int alive_neighbours_count = 0;
+    // TODO: this ignores border pixels, the border need some special treatment
     if(x > 0 && y > 0 && x < (width - 1) && (y < height -1)) {
         // iterate over all neighbours
         for(int x_i = x - 1; x_i <= x + 1; x_i++) {
@@ -314,40 +224,24 @@ __global__ void _gpuConwayNextGeneration(
     // apply conway rules
     if( (current_cell_state == 0 && alive_neighbours_count == 3)
         || current_cell_state == 1 && (alive_neighbours_count == 2 || alive_neighbours_count == 3) ) {
-        output_state[y * width + x] = 1;    // live
+        output_state[cell_idx] = alive_state;    // live
         current_cell_state = 1;
     } else if(current_cell_state == 1 && (alive_neighbours_count < 2 || alive_neighbours_count > 3)) {
-        output_state[y * width + x] = 0;    // die
-        current_cell_state = 0;
+        output_state[cell_idx] = dead_state;    // die
     } else {
         // just keep current state
-    }
-
-
-    int color_index = y * width * 4 + (x * 4);
-    if(current_cell_state) {
-        img_rgba[color_index] = color_alive >> 24;
-        img_rgba[color_index + 1] = color_alive >> 16 && 0xFF;
-        img_rgba[color_index + 2] = color_alive >> 8 && 0xFF;
-        img_rgba[color_index + 3] = 255;
-    } else {
-        img_rgba[color_index] = color_dead >> 24;
-        img_rgba[color_index + 1] = color_dead >> 16 && 0xFF;
-        img_rgba[color_index + 2] = color_dead >> 8 && 0xFF;
-        img_rgba[color_index + 3] = 255;
     }
 }
 
 cudaError_t _cudaConwayNextGeneration(
     uint8_t* input_state,
     uint8_t* output_state,
-    uint8_t* img_rgba,
     int width,
     int height,
-    int color_alive,
-    int color_dead)
+    uint8_t alive_state,
+    uint8_t dead_state)
 {
-    if( !input_state || !output_state || !img_rgba )
+    if( !input_state || !output_state )
         return cudaErrorInvalidDevicePointer;
 
     if( width == 0 || height == 0 )
@@ -357,7 +251,7 @@ cudaError_t _cudaConwayNextGeneration(
     const dim3 blockDim(32, 32);
     const dim3 gridDim(iDivUp(width,blockDim.x), iDivUp(height,blockDim.y));
     
-    _gpuConwayNextGeneration<<<gridDim, blockDim>>>(input_state, output_state, img_rgba, width, height, color_alive, color_dead);
+    _gpuConwayNextGeneration<<<gridDim, blockDim>>>(input_state, output_state, width, height, alive_state, dead_state);
 
     return CUDA(cudaGetLastError());
 }
@@ -366,11 +260,81 @@ extern "C" void
 cudaConwayNextGeneration(
     uint8_t* input_state,
     uint8_t* output_state,
-    uint8_t* img_rgba,
     int width,
     int height,
+    uint8_t alive_state,
+    uint8_t dead_state)
+{
+    _cudaConwayNextGeneration(input_state, output_state, width, height, alive_state, dead_state);
+}
+
+
+
+
+
+__global__ void _gpuDrawConwayGeneration(
+    uint8_t* input_state,
+    uint32_t* img_rgba,
+    int width,
+    int height,
+    uint8_t alive_state,
+    uint8_t dead_state,
+    int color_alive,
+    int color_dead) {
+
+    const int x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if( x >= width || y >= height )
+        return;
+    
+    int cell_idx = y * width + x;
+    int color_idx = y * width * 4 + (x * 4);
+
+    bool is_cell_alive = (alive_state == input_state[cell_idx]);
+    
+    if(is_cell_alive) {
+        img_rgba[color_idx] = color_alive;
+    } else {
+        img_rgba[color_idx] = color_dead;
+    }
+}
+
+cudaError_t _cudaDrawConwayGeneration(
+    uint8_t* input_state,
+    uint32_t* img_rgba,
+    int width,
+    int height,
+    uint8_t alive_state,
+    uint8_t dead_state,
     int color_alive,
     int color_dead)
 {
-    _cudaConwayNextGeneration(input_state, output_state, img_rgba, width, height, color_alive, color_dead);
+    if( !input_state || !img_rgba )
+        return cudaErrorInvalidDevicePointer;
+
+    if( width == 0 || height == 0 )
+        return cudaErrorInvalidValue;
+
+    // launch kernel
+    const dim3 blockDim(32, 32);
+    const dim3 gridDim(iDivUp(width,blockDim.x), iDivUp(height,blockDim.y));
+    
+    _gpuDrawConwayGeneration<<<gridDim, blockDim>>>(input_state, img_rgba, width, height, alive_state, dead_state, color_alive, color_dead);
+
+    return CUDA(cudaGetLastError());
+}
+
+extern "C" void
+cudaDrawConwayGeneration(
+    uint8_t* input_state,
+    uint32_t* img_rgba,
+    int width,
+    int height,
+    uint8_t alive_state,
+    uint8_t dead_state,
+    int color_alive,
+    int color_dead)
+{
+    _cudaDrawConwayGeneration(input_state, img_rgba, width, height, alive_state, dead_state, color_alive, color_dead);
 }
