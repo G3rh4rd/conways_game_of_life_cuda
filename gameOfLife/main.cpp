@@ -181,7 +181,7 @@ void process(int width, int height/* , int radius */)
     // cudaRandom( (uint8_t*)out_data, width, height );
     // color format abgr
     cudaDrawConwayGeneration( current_generation, (uint32_t*)out_data, width, height, 1, 0, 0xFFFFFFFF, 0xFF000000);
-    printf("process: %d\n", num_bytes);
+    // printf("process: %d\n", num_bytes);
 #ifdef USE_TEXSUBIMAGE2D
     checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_pbo_dest_resource, 0));
 #endif
@@ -340,6 +340,7 @@ keyboard(unsigned char key, int /*x*/, int /*y*/)
             break;
 
         case ' ':
+            cudaInitRandomStates(current_generation, window_width, window_height, 0, 2);
             break;
 
         case 'a':
@@ -604,6 +605,7 @@ runStdProgram(int argc, char **argv)
 
     // create menu
     glutCreateMenu(mainMenu);
+    glutAddMenuEntry("Create random generation", ' ');
     glutAddMenuEntry("Quit (esc)", '\033');
     glutAttachMenu(GLUT_RIGHT_BUTTON);
 
@@ -615,6 +617,7 @@ runStdProgram(int argc, char **argv)
     printf("\n"
            "\tControls\n"
            "\t(right click mouse button for Menu)\n"
+           "\t[space] create random generation\n"
            "\t[esc] - Quit\n\n"
           );
 
