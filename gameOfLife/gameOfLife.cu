@@ -279,8 +279,8 @@ __global__ void _gpuDrawConwayGeneration(
     int height,
     uint8_t alive_state,
     uint8_t dead_state,
-    int color_alive,
-    int color_dead) {
+    uint32_t color_alive,
+    uint32_t color_dead) {
 
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -289,14 +289,13 @@ __global__ void _gpuDrawConwayGeneration(
         return;
     
     int cell_idx = y * width + x;
-    int color_idx = y * width * 4 + (x * 4);
 
     bool is_cell_alive = (alive_state == input_state[cell_idx]);
     
     if(is_cell_alive) {
-        img_rgba[color_idx] = color_alive;
+        img_rgba[cell_idx] = color_alive;
     } else {
-        img_rgba[color_idx] = color_dead;
+        img_rgba[cell_idx] = color_dead;
     }
 }
 
@@ -307,8 +306,8 @@ cudaError_t _cudaDrawConwayGeneration(
     int height,
     uint8_t alive_state,
     uint8_t dead_state,
-    int color_alive,
-    int color_dead)
+    uint32_t color_alive,
+    uint32_t color_dead)
 {
     if( !input_state || !img_rgba )
         return cudaErrorInvalidDevicePointer;
@@ -333,8 +332,8 @@ cudaDrawConwayGeneration(
     int height,
     uint8_t alive_state,
     uint8_t dead_state,
-    int color_alive,
-    int color_dead)
+    uint32_t color_alive,
+    uint32_t color_dead)
 {
     _cudaDrawConwayGeneration(input_state, img_rgba, width, height, alive_state, dead_state, color_alive, color_dead);
 }

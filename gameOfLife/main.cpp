@@ -128,14 +128,15 @@ static uint8_t *current_generation, *next_generation;
 
 
 extern "C" void
-cudaRandom( uint8_t* output, int width, int height);
-
-extern "C" void
 cudaInitRandomStates(uint8_t* output, int width, int height, int min, int max);
 
+// extern "C" void
+// cudaConwayNextGeneration( uint8_t* input_state, uint8_t* output_state, uint8_t* img_rgba,
+//     int width, int height, int color_alive, int color_dead );
+
 extern "C" void
-cudaConwayNextGeneration( uint8_t* input_state, uint8_t* output_state, uint8_t* img_rgba,
-    int width, int height, int color_alive, int color_dead );
+cudaDrawConwayGeneration( uint8_t* input_state, uint32_t* img_rgba, int width, int height,
+    uint8_t alive_state, uint8_t dead_state, int color_alive, int color_dead);
 
 // Forward declarations
 void runStdProgram(int argc, char **argv);
@@ -175,11 +176,12 @@ void process(int width, int height/* , int radius */)
 
     checkCudaErrors(cudaGraphicsMapResources(1, &cuda_pbo_dest_resource, 0));
     size_t num_bytes;
-    checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&out_data, &num_bytes,
-                                                         cuda_pbo_dest_resource));
+    checkCudaErrors(cudaGraphicsResourceGetMappedPointer((void **)&out_data, &num_bytes, cuda_pbo_dest_resource));
 
-    cudaRandom( (uint8_t*)out_data, width, height );
-    // printf("process\n");
+    // cudaRandom( (uint8_t*)out_data, width, height );
+    // color format abgr
+    cudaDrawConwayGeneration( current_generation, (uint32_t*)out_data, width, height, 1, 0, 0xFFFFFFFF, 0xFF000000);
+    printf("process: %d\n", num_bytes);
 #ifdef USE_TEXSUBIMAGE2D
     checkCudaErrors(cudaGraphicsUnmapResources(1, &cuda_pbo_dest_resource, 0));
 #endif
@@ -505,9 +507,18 @@ main(int argc, char **argv)
     setenv ("DISPLAY", ":0", 0);
 #endif
 
+    int bytes = sizeof(uint8_t) * window_width * window_height;
+    cudaMalloc(&current_generation, bytes);
+    cudaMalloc(&next_generation, bytes);
+
+    cudaInitRandomStates(current_generation, window_width, window_height, 0, 2);
+
     printf("%s Starting...\n\n", argv[0]);
 
     runStdProgram(argc, argv);
+
+    cudaFree(current_generation);
+    cudaFree(next_generation);
 
     exit(EXIT_SUCCESS);
 }
